@@ -1,0 +1,13 @@
+services:
+  messenger:
+    build: .
+    container_name: messenger
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_PATH: /app/data/chat.db
+      RUST_LOG: messenger_server=info,tower_http=info
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Наш Мессенджер</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="auth-container" id="authBox">
+        <h3 id="formTitle">Войти в Мессенджер</h3>
+        <input type="text" id="loginInput" placeholder="Введите логин" autocomplete="username">
+        <input type="password" id="passInput" placeholder="Введите пароль" autocomplete="current-password">
+        <input type="password" id="passConfirmInput" placeholder="Повторите пароль" style="display: none;" autocomplete="new-password">
+        <button id="actionBtn">Войти</button>
+        <div class="error-msg" id="errorBlock"></div>
+        <div class="success-msg" id="successBlock"></div>
+        <div class="toggle-link" id="toggleBlock">
+            Нет аккаунта? <span id="registerLink">Зарегистрироваться</span>
+        </div>
+    </div>
+
+    <div class="messenger-container" id="messengerBox">
+        <div class="sidebar">
+            <div class="user-profile">
+                <span id="myUsername">Загрузка...</span>
+                <button class="logout-btn" id="logoutBtn">Выйти</button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Найти человека по логину...">
+                <button id="searchBtn">Найти</button>
+            </div>
+            <div class="contacts-list" id="contactsListBlock">
+                <div class="empty">Список контактов пуст</div>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header" id="activeChatHeader">Выберите чат для начала общения</div>
+            <div class="messages-display" id="messagesDisplayBlock"></div>
+            <div class="chat-input-area">
+                <input type="text" id="chatMessageInput" placeholder="Напишите сообщение..." disabled>
+                <button id="chatSendBtn" disabled>Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>

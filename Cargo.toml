@@ -1,14 +1,17 @@
 [package]
 name = "messenger_server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 futures-util = "0.3"
-rusqlite = { version = "0.31", features = ["bundled"] } 
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 bcrypt = "0.15"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

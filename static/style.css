@@ -1,0 +1,70 @@
+* { box-sizing: border-box; }
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #fafafa;
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.auth-container {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 30px;
+    border-radius: 8px;
+    width: 320px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+h3 { margin-top: 0; text-align: center; color: #333; }
+input {
+    width: 100%; padding: 10px; margin: 8px 0;
+    border: 1px solid #ddd; border-radius: 5px;
+}
+button {
+    width: 100%; padding: 10px; border: none;
+    background: #007bff; color: white; border-radius: 5px;
+    cursor: pointer; font-weight: 700; margin-top: 10px;
+}
+button:disabled { background: #9bbce0; cursor: not-allowed; }
+button:hover:not(:disabled) { background: #0056b3; }
+.toggle-link { text-align: center; font-size: 0.9em; margin-top: 15px; color: #555; }
+.toggle-link span { color: #007bff; cursor: pointer; text-decoration: underline; }
+.error-msg, .success-msg { font-size: 0.9em; text-align: center; margin-top: 10px; display: none; }
+.error-msg { color: #dc3545; }
+.success-msg { color: #198754; }
+.messenger-container {
+    display: none; width: 90vw; max-width: 1000px; height: 85vh;
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow: hidden;
+}
+.sidebar { width: 30%; min-width: 250px; border-right: 1px solid #ddd; display: flex; flex-direction: column; background: #fff; }
+.user-profile { padding: 15px; border-bottom: 1px solid #eee; background: #f9f9f9; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.logout-btn { font-size: 0.75em; padding: 5px 10px; background: #dc3545; width: auto; margin: 0; }
+.search-box { padding: 10px; border-bottom: 1px solid #eee; display: flex; gap: 5px; }
+.search-box input { margin: 0; padding: 8px; font-size: 0.9em; }
+.search-box button { margin: 0; width: auto; padding: 8px 12px; }
+.contacts-list { flex: 1; overflow-y: auto; }
+.contact-item { padding: 12px 15px; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: 0.2s; }
+.contact-item:hover { background: #f0f7ff; }
+.contact-item.active { background: #e1f0ff; font-weight: 700; }
+.empty { padding: 15px; color: #999; text-align: center; font-size: 0.9em; }
+.chat-area { width: 70%; display: flex; flex-direction: column; background: #fdfdfd; }
+.chat-header { padding: 15px; border-bottom: 1px solid #ddd; background: #fff; font-weight: 700; }
+.messages-display { flex: 1; padding: 20px; overflow-y: auto; background: #f4f4f7; }
+.chat-input-area { padding: 15px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 10px; }
+.chat-input-area input { margin: 0; flex: 1; }
+.chat-input-area button { margin: 0; width: auto; padding: 10px 20px; }
+.msg-row { display: flex; margin-bottom: 10px; width: 100%; }
+.msg-row.my-msg { justify-content: flex-end; }
+.msg-cloud { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 0.95em; line-height: 1.4; word-break: break-word; }
+.msg-row.my-msg .msg-cloud { background: #007bff; color: white; border-bottom-right-radius: 2px; }
+.msg-row.their-msg .msg-cloud { background: #e9e9eb; color: #333; border-bottom-left-radius: 2px; }
+.msg-time { font-size: 0.75em; margin-top: 4px; text-align: right; opacity: 0.7; }
+@media (max-width: 700px) {
+    .messenger-container { width: 100vw; height: 100vh; border-radius: 0; }
+    .sidebar { width: 38%; min-width: 145px; }
+    .chat-area { width: 62%; }
+    .chat-input-area { padding: 8px; }
+    .chat-input-area button { padding: 10px; }
+}

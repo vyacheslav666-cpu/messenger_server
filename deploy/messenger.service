@@ -1,0 +1,16 @@
+[Unit]
+Description=Rust Messenger Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/messenger
+ExecStart=/opt/messenger/messenger_server
+Restart=always
+RestartSec=3
+Environment=PORT=8080
+Environment=DATABASE_PATH=/opt/messenger/data/chat.db
+Environment=RUST_LOG=messenger_server=info,tower_http=info
+
+[Install]
+WantedBy=multi-user.target
