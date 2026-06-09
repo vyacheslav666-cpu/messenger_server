@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мессенджер - Вход</title>
+    <title>Наш Мессенджер</title>
     <style>
-        body { font-family: sans-serif; background: #fafafa; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        body { font-family: sans-serif; background: #fafafa; margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        /* Экран авторизации */
         .auth-container { background: #fff; border: 1px solid #ddd; padding: 30px; border-radius: 8px; width: 300px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         h3 { margin-top: 0; text-align: center; color: #333; }
         input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
@@ -15,38 +17,110 @@
         .toggle-link span { color: #007bff; cursor: pointer; text-decoration: underline; }
         .error-msg { color: red; font-size: 0.9em; text-align: center; margin-top: 10px; display: none; }
         .success-msg { color: green; font-size: 0.9em; text-align: center; margin-top: 10px; display: none; }
+
+        /* Главный экран мессенджера */
+        .messenger-container { display: none; width: 90vw; max-width: 1000px; height: 85vh; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow: hidden; }
+        
+        /* Левая панель (Контакты/Поиск) */
+        .sidebar { width: 30%; border-right: 1px solid #ddd; display: flex; flex-direction: column; background: #fff; }
+        .user-profile { padding: 15px; border-bottom: 1px solid #eee; background: #f9f9f9; font-weight: bold; font-size: 1.1em; display: flex; justify-content: space-between; align-items: center; }
+        .logout-btn { font-size: 0.75em; padding: 4px 8px; background: #dc3545; border-radius: 4px; border: none; color: white; cursor: pointer; }
+        .search-box { padding: 10px; border-bottom: 1px solid #eee; display: flex; gap: 5px; }
+        .search-box input { margin: 0; padding: 8px; font-size: 0.9em; }
+        .search-box button { margin: 0; width: auto; padding: 8px 12px; }
+        .contacts-list { flex: 1; overflow-y: auto; }
+        .contact-item { padding: 12px 15px; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: 0.2s; }
+        .contact-item:hover { background: #f0f7ff; }
+        .contact-item.active { background: #e1f0ff; font-weight: bold; }
+
+        /* Правая панель (Окно чата) */
+        .chat-area { width: 70%; display: flex; flex-direction: column; background: #fdfdfd; }
+        .chat-header { padding: 15px; border-bottom: 1px solid #ddd; background: #fff; font-weight: bold; font-size: 1.1em; }
+        .messages-display { flex: 1; padding: 20px; overflow-y: auto; background: #f4f4f7; }
+        .chat-input-area { padding: 15px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 10px; }
+        .chat-input-area input { margin: 0; flex: 1; }
+        .chat-input-area button { margin: 0; width: auto; padding: 10px 20px; }
+
+        /* Стили сообщений */
+        .msg-row { display: flex; margin-bottom: 10px; width: 100%; }
+        .msg-row.my-msg { justify-content: flex-end; }
+        .msg-cloud { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 0.95em; line-height: 1.4; word-break: break-word; }
+        .msg-row.my-msg .msg-cloud { background: #007bff; color: white; border-bottom-right-radius: 2px; }
+        .msg-row.their-msg .msg-cloud { background: #e9e9eb; color: #333; border-bottom-left-radius: 2px; }
+        .msg-time { font-size: 0.75em; margin-top: 4px; text-align: right; opacity: 0.7; }
     </style>
 </head>
 <body>
 
     <div class="auth-container" id="authBox">
         <h3 id="formTitle">Войти в Мессенджер</h3>
-        
         <input type="text" id="loginInput" placeholder="Введите логин">
         <input type="password" id="passInput" placeholder="Введите пароль">
         <input type="password" id="passConfirmInput" placeholder="Повторите пароль" style="display: none;">
-        
         <button id="actionBtn" onclick="submitAuth()">Войти</button>
-        
         <div class="error-msg" id="errorBlock"></div>
         <div class="success-msg" id="successBlock"></div>
-
         <div class="toggle-link" id="toggleBlock">
             Нет аккаунта? <span onclick="switchMode(true)">Зарегистрироваться</span>
         </div>
     </div>
 
+    <div class="messenger-container" id="messengerBox">
+        <div class="sidebar">
+            <div class="user-profile">
+                <span id="myUsername">Загрузка...</span>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Найти человека по логину...">
+                <button onclick="searchContact()">Найти</button>
+            </div>
+            <div class="contacts-list" id="contactsListBlock">
+                <div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">Список контактов пуст</div>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header" id="activeChatHeader">Выберите чат для начала общения</div>
+            <div class="messages-display" id="messagesDisplayBlock">
+                </div>
+            <div class="chat-input-area">
+                <input type="text" id="chatMessageInput" placeholder="Напишите сообщение..." disabled onkeydown="if(event.keyCode===13) sendChatMessage()">
+                <button id="chatSendBtn" onclick="sendChatMessage()" disabled>Отправить</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let isRegisterMode = false;
-        // Берём IP-адрес ноутбука, с которого запущена страница
+        let currentActiveChatUserId = null; // ID того, с кем сейчас открыт чат
+
         const SERVER_IP = window.location.hostname; 
         const API_URL = `http://${SERVER_IP}:8080`;
+
+        // Проверяем при загрузке: если юзер уже логинился, сразу пускаем внутрь
+        window.onload = function() {
+            if (sessionStorage.getItem('userId')) {
+                showMessengerUI();
+            }
+        };
+
+        function showMessengerUI() {
+            document.getElementById('authBox').style.display = 'none';
+            document.getElementById('messengerBox').style.display = 'flex';
+            document.getElementById('myUsername').innerText = sessionStorage.getItem('userLogin');
+            // Здесь в будущем будем запрашивать список уже существующих чатов из базы
+        }
+
+        function logout() {
+            sessionStorage.clear();
+            location.reload();
+        }
 
         function switchMode(toRegister) {
             isRegisterMode = toRegister;
             document.getElementById('errorBlock').style.display = 'none';
             document.getElementById('successBlock').style.display = 'none';
-            
             if (isRegisterMode) {
                 document.getElementById('formTitle').innerText = 'Регистрация';
                 document.getElementById('passConfirmInput').style.display = 'block';
@@ -70,62 +144,40 @@
             errorBlock.style.display = 'none';
             successBlock.style.display = 'none';
 
-            if (!login || !pass) {
-                showError("Заполните все поля!");
-                return;
-            }
+            if (!login || !pass) { return showError("Заполните все поля!"); }
 
             if (isRegisterMode) {
-                if (pass !== passConfirm) {
-                    showError("Пароли не совпадают!");
-                    return;
-                }
-
-                // Шлём HTTP POST запрос на Rust сервер для регистрации
+                if (pass !== passConfirm) { return showError("Пароли не совпадают!"); }
                 try {
                     const response = await fetch(`${API_URL}/register`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ login: login, password_hash: pass })
                     });
-
                     if (response.ok) {
-                        successBlock.innerText = "Регистрация успешна! Теперь вооооооооооооооойти...";
+                        successBlock.innerText = "Регистрация успешна!";
                         successBlock.style.display = 'block';
-                        setTimeout(() => switchMode(false), 1500); // через 1.5 сек переключаем на вход
+                        setTimeout(() => switchMode(false), 1200);
                     } else {
-                        const errText = await response.text();
-                        showError(errText || "Ошибка регистрации");
+                        showError(await response.text() || "Ошибка регистрации");
                     }
-                } catch (e) {
-                    showError("Сервер Rust недоступен!");
-                }
-
+                } catch (e) { showError("Сервер Rust недоступен!"); }
             } else {
-                // Шлём HTTP POST запрос на Rust сервер для логина
                 try {
                     const response = await fetch(`${API_URL}/login`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ login: login, password_hash: pass })
                     });
-
                     if (response.ok) {
                         const userData = await response.json();
-                        
-                        // Сохраняем данные успешного входа в память браузера (sessionStorage)
                         sessionStorage.setItem('userId', userData.user_id);
                         sessionStorage.setItem('userLogin', userData.login);
-                        
-                        alert(`Добро пожаловать, ${userData.login}! Переходим в мессенджер...`);
-                        // Сюда мы на следующем шаге прикрутим переход на страницу с контактами и чатами!
+                        showMessengerUI();
                     } else {
-                        const errText = await response.text();
-                        showError(errText || "Неверный логин или пароль");
+                        showError(await response.text() || "Неверный логин или пароль");
                     }
-                } catch (e) {
-                    showError("Сервер Rust недоступен!");
-                }
+                } catch (e) { showError("Сервер Rust недоступен!"); }
             }
         }
 
@@ -133,6 +185,84 @@
             const errorBlock = document.getElementById('errorBlock');
             errorBlock.innerText = text;
             errorBlock.style.display = 'block';
+        }
+
+        // ШАГ 3: ФУНКЦИЯ ПОИСКА ЛЮДЕЙ ПО ИМЕНИ
+        async function searchContact() {
+            const query = document.getElementById('searchInput').value.trim();
+            if(!query) return;
+
+            try {
+                // Шлём GET-запрос на сервер Rust для поиска пользователя
+                const response = await fetch(`${API_URL}/search?login=${query}`);
+                if (response.ok) {
+                    const users = await response.json();
+                    const listBlock = document.getElementById('contactsListBlock');
+                    listBlock.innerHTML = "";
+
+                    if(users.length === 0) {
+                        listBlock.innerHTML = `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">Никого не найдено</div>`;
+                        return;
+                    }
+
+                    // Отрисовываем найденных людей
+                    users.forEach(u => {
+                        // Не показываем самих себя в поиске
+                        if(u.user_id == sessionStorage.getItem('userId')) return;
+
+                        listBlock.innerHTML += `
+                            <div class="contact-item" onclick="openChat(${u.user_id}, '${u.login}')" id="contact-${u.user_id}">
+                                👤 ${u.login}
+                            </div>
+                        `;
+                    });
+                }
+            } catch(e) {
+                console.error("Ошибка поиска контактов:", e);
+            }
+        }
+
+        // Переключение на конкретный диалог
+        function openChat(userId, login) {
+            currentActiveChatUserId = userId;
+            
+            // Подсвечиваем активный контакт в списке
+            document.querySelectorAll('.contact-item').forEach(el => el.classList.remove('active'));
+            const activeEl = document.getElementById(`contact-${userId}`);
+            if(activeEl) activeEl.classList.add('active');
+
+            // Меняем шапку чата и разблокируем ввод
+            document.getElementById('activeChatHeader').innerText = `Чат с пользователем: ${login}`;
+            document.getElementById('chatMessageInput').disabled = false;
+            document.getElementById('chatSendBtn').disabled = false;
+            document.getElementById('chatMessageInput').focus();
+
+            // Очищаем старые сообщения (подгрузку истории с БД прикрутим на следующем этапе)
+            document.getElementById('messagesDisplayBlock').innerHTML = `
+                <div style="text-align:center; color:#999; font-size:0.85em; margin-bottom:15px;">Начало диалога с ${login}</div>
+            `;
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chatMessageInput');
+            const text = input.value.trim();
+            if(!text || !currentActiveChatUserId) return;
+
+            // Сюда на следующем шаге мы повесим отправку пакета через WebSocket!
+            // Пока просто локально нарисуем наше сообщение в окне чата для теста интерфейса
+            const display = document.getElementById('messagesDisplayBlock');
+            const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            display.innerHTML += `
+                <div class="msg-row my-msg">
+                    <div class="msg-cloud">
+                        <div>${text}</div>
+                        <div class="msg-time">${time}</div>
+                    </div>
+                </div>
+            `;
+            input.value = "";
+            display.scrollTop = display.scrollHeight;
         }
     </script>
 </body>
