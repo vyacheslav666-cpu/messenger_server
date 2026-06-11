@@ -1,170 +1,68 @@
-# Messenger Server
+# Messenger Anon v0.3
 
-Нормализованная версия MVP-мессенджера:
+Минималистичный анонимный текстовый мессенджер.
 
-- Rust + Axum
-- SQLite
-- WebSocket live-сообщения
-- фронтенд отдаётся самим сервером
-- Docker / Docker Compose
-- готовые заготовки для VPS, systemd и nginx
+## Принципы
 
-## Структура
+- только логин и пароль;
+- только текст;
+- файлы/картинки/видео — ссылками;
+- без онлайн-статуса;
+- без read receipts;
+- без контактов из телефона;
+- без рекомендаций;
+- без геолокации;
+- минимум логов, без текста сообщений;
+- сервер должен знать минимум.
 
-```text
-messenger_anon_v02/
-├── src/
-│   ├── main.rs
-│   ├── config.rs
-│   ├── db.rs
-│   ├── error.rs
-│   ├── models.rs
-│   ├── routes.rs
-│   ├── state.rs
-│   └── websocket.rs
-├── static/
-│   ├── index.html
-│   ├── app.js
-│   └── style.css
-├── deploy/
-│   ├── messenger.service
-│   └── nginx.conf
-├── Cargo.toml
-├── Dockerfile
-├── docker-compose.yml
-└── .env.example
-```
+## Что есть в v0.3
 
-## Запуск на Windows 11 без Docker
+- регистрация;
+- вход;
+- личные чаты;
+- WebSocket live-сообщения;
+- история сообщений;
+- счётчики непрочитанных;
+- автообновление списка чатов;
+- блокировка пользователя;
+- удаление аккаунта с удалением личных переписок;
+- Docker/Docker Compose;
+- сервер сам отдаёт веб-клиент.
 
-Нужен Rust:
-
-```powershell
-winget install Rustlang.Rustup
-```
-
-Потом в папке проекта:
+## Запуск на Windows 11
 
 ```powershell
 cargo run
 ```
 
-Открыть в браузере:
-
-```text
-http://localhost:8080
-```
-
-## Запуск на Windows 11 через Docker
-
-Поставить Docker Desktop, потом:
-
-```powershell
-docker compose up --build
-```
-
 Открыть:
 
 ```text
-http://localhost:8080
+http://127.0.0.1:8080
 ```
 
-## Запуск на VPS Ubuntu через Docker
+## Запуск через Docker
 
 ```bash
-sudo apt update
-sudo apt install -y git docker.io docker-compose-plugin
-sudo systemctl enable --now docker
-
-git clone <URL_ТВОЕГО_ПРИВАТНОГО_РЕПОЗИТОРИЯ> messenger
-cd messenger
-docker compose up -d --build
+docker compose up --build
 ```
 
-Проверка:
+## Проверка двух пользователей
 
-```bash
-curl http://127.0.0.1:8080/health
-```
+1. Открой обычное окно браузера.
+2. Зарегистрируй `First`.
+3. Открой приватное окно.
+4. Зарегистрируй `Second`.
+5. Найди пользователей по логину и напиши сообщение.
 
-## Запуск на VPS Ubuntu без Docker
+## Важно
 
-```bash
-sudo apt update
-sudo apt install -y git curl build-essential pkg-config libssl-dev nginx
-curl https://sh.rustup.rs -sSf | sh
-source ~/.cargo/env
+Это всё ещё dev/MVP. Сейчас `user_id` передаётся с клиента, поэтому для настоящего интернета нужен следующий шаг: нормальные сессии/токены и HTTPS.
 
-git clone <URL_ТВОЕГО_ПРИВАТНОГО_РЕПОЗИТОРИЯ> messenger
-cd messenger
-cargo build --release
-```
+## Следующие версии
 
-Потом можно поставить бинарник в `/opt/messenger` и подключить `deploy/messenger.service`.
-
-## Nginx + домен
-
-Скопировать `deploy/nginx.conf` в:
-
-```bash
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/messenger
-sudo ln -s /etc/nginx/sites-available/messenger /etc/nginx/sites-enabled/messenger
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-В `nginx.conf` заменить `your-domain.com` на свой домен.
-
-Для HTTPS:
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
-
-## Что исправлено
-
-- Сервер сам отдаёт фронтенд, больше не надо открывать `index.html` как файл.
-- API теперь лежит под `/api/...`.
-- WebSocket лежит на `/ws`.
-- Пароль на фронте называется `password`, а не `password_hash`.
-- Сервер не верит `sender_id` из браузера.
-- Текст сообщений вставляется через `textContent`, а не через `innerHTML`.
-- Код разбит на модули.
-- Добавлен Docker и деплой-заготовки.
-
-## Что ещё НЕ production
-
-Это всё ещё учебный MVP. Для реального публичного сервиса потом нужны:
-
-- нормальные сессии/JWT вместо `sessionStorage userId`
-- PostgreSQL вместо SQLite
-- HTTPS обязательно
-- rate limit
-- миграции базы
-- удаление/редактирование сообщений
-- список контактов/диалогов как отдельная сущность
-- защита от спама
-
-
-## v0.2: анонимные принципы
-
-Добавлено:
-
-- список чатов сортируется по последнему сообщению;
-- счётчик непрочитанных сообщений;
-- автообновление списка чатов при входящих сообщениях;
-- нет онлайн-статуса;
-- нет read receipts: сервер хранит last_read только для счётчика самого пользователя и никому его не отдаёт;
-- сервер не логирует текст сообщений;
-- сообщения экранируются на фронте через textContent.
-
-Дальше по плану:
-
-1. блокировка пользователей;
-2. удаление аккаунта;
-3. групповые беседы через общую таблицу chats/chat_members;
-4. поиск по истории;
-5. предпросмотр ссылок без загрузки файлов на сервер;
-6. production mode без лишних логов;
-7. HTTPS + reverse proxy + Docker на VPS.
+v0.4 — групповые беседы  
+v0.5 — поиск по истории  
+v0.6 — предпросмотр ссылок  
+v0.7 — нормальные серверные сессии  
+v1.0 — шифрование

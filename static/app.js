@@ -18,6 +18,8 @@ function bindEvents() {
     el('actionBtn').addEventListener('click', submitAuth);
     el('registerLink').addEventListener('click', () => switchMode(true));
     el('logoutBtn').addEventListener('click', logout);
+    el('deleteAccountBtn').addEventListener('click', deleteAccount);
+    el('blockBtn').addEventListener('click', blockCurrentUser);
     el('searchBtn').addEventListener('click', searchContact);
     el('chatSendBtn').addEventListener('click', sendChatMessage);
 
@@ -203,7 +205,8 @@ async function searchContact() {
     if (!query) return loadActiveChats();
 
     try {
-        const response = await fetch(`${API_URL}/search?login=${encodeURIComponent(query)}`);
+        const myId = sessionStorage.getItem('userId');
+        const response = await fetch(`${API_URL}/search?login=${encodeURIComponent(query)}&user_id=${encodeURIComponent(myId)}`);
         if (!response.ok) return;
         const users = await response.json();
         renderContacts(users);
@@ -224,6 +227,7 @@ async function openChat(targetUserId, login) {
     el('activeChatHeader').innerText = `Чат с пользователем: ${login}`;
     el('chatMessageInput').disabled = false;
     el('chatSendBtn').disabled = false;
+    el('blockBtn').disabled = false;
     el('chatMessageInput').focus();
 
     const display = el('messagesDisplayBlock');
@@ -248,6 +252,50 @@ function sendChatMessage() {
 
     ws.send(JSON.stringify({ receiver_id: currentActiveChatUserId, text }));
     input.value = '';
+}
+
+async function blockCurrentUser() {
+    if (!currentActiveChatUserId) return;
+    const ok = confirm(`Заблокировать ${currentActiveChatLogin}? Переписка исчезнет из списка, новые сообщения не будут проходить.`);
+    if (!ok) return;
+
+    const myId = Number(sessionStorage.getItem('userId'));
+    const response = await fetch(`${API_URL}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: myId, target_id: currentActiveChatUserId })
+    });
+
+    if (!response.ok) return showError(await response.text());
+
+    currentActiveChatUserId = null;
+    currentActiveChatLogin = null;
+    el('activeChatHeader').innerText = 'Выберите чат для начала общения';
+    el('messagesDisplayBlock').innerHTML = '';
+    el('chatMessageInput').value = '';
+    el('chatMessageInput').disabled = true;
+    el('chatSendBtn').disabled = true;
+    el('blockBtn').disabled = true;
+    loadActiveChats();
+}
+
+async function deleteAccount() {
+    const password = prompt('Для удаления аккаунта введи пароль. Все твои личные переписки будут удалены.');
+    if (!password) return;
+    const ok = confirm('Точно удалить аккаунт? Отменить нельзя.');
+    if (!ok) return;
+
+    const myId = Number(sessionStorage.getItem('userId'));
+    const response = await fetch(`${API_URL}/account/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: myId, password })
+    });
+
+    if (!response.ok) return showError(await response.text());
+    sessionStorage.clear();
+    if (ws) ws.close();
+    location.reload();
 }
 
 function appendMessage(msg, type) {

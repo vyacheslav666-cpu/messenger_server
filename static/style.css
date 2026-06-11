@@ -40,7 +40,10 @@ button:hover:not(:disabled) { background: #0056b3; }
 }
 .sidebar { width: 30%; min-width: 250px; border-right: 1px solid #ddd; display: flex; flex-direction: column; background: #fff; }
 .user-profile { padding: 15px; border-bottom: 1px solid #eee; background: #f9f9f9; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.profile-actions { display: flex; gap: 6px; align-items: center; }
 .logout-btn { font-size: 0.75em; padding: 5px 10px; background: #dc3545; width: auto; margin: 0; }
+.danger-small { font-size: 0.75em; padding: 5px 10px; background: #6c1d25; width: auto; margin: 0; }
+.danger-small:hover:not(:disabled) { background: #4b1117; }
 .search-box { padding: 10px; border-bottom: 1px solid #eee; display: flex; gap: 5px; }
 .search-box input { margin: 0; padding: 8px; font-size: 0.9em; }
 .search-box button { margin: 0; width: auto; padding: 8px 12px; }
@@ -50,7 +53,8 @@ button:hover:not(:disabled) { background: #0056b3; }
 .contact-item.active { background: #e1f0ff; font-weight: 700; }
 .empty { padding: 15px; color: #999; text-align: center; font-size: 0.9em; }
 .chat-area { width: 70%; display: flex; flex-direction: column; background: #fdfdfd; }
-.chat-header { padding: 15px; border-bottom: 1px solid #ddd; background: #fff; font-weight: 700; }
+.chat-header { padding: 15px; border-bottom: 1px solid #ddd; background: #fff; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chat-action { flex: 0 0 auto; }
 .messages-display { flex: 1; padding: 20px; overflow-y: auto; background: #f4f4f7; }
 .chat-input-area { padding: 15px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 10px; }
 .chat-input-area input { margin: 0; flex: 1; }

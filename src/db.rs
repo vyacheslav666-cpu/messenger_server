@@ -31,8 +31,17 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
              FOREIGN KEY(user_id) REFERENCES users(id),
              FOREIGN KEY(target_id) REFERENCES users(id)
          );
+         CREATE TABLE IF NOT EXISTS user_blocks (
+             blocker_id INTEGER NOT NULL,
+             blocked_id INTEGER NOT NULL,
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             PRIMARY KEY (blocker_id, blocked_id),
+             FOREIGN KEY(blocker_id) REFERENCES users(id),
+             FOREIGN KEY(blocked_id) REFERENCES users(id)
+         );
          CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, id);
-         CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id, id);"
+         CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id, id);
+         CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON user_blocks(blocked_id);"
     )
 }
 
@@ -85,6 +94,8 @@ pub fn search_users(conn: &Connection, login: &str, current_user_id: i64) -> App
     let mut stmt = conn.prepare(
         "SELECT id, login FROM users
          WHERE login LIKE ?1 AND id != ?2 AND deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.blocker_id = ?2 AND b.blocked_id = users.id)
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.blocker_id = users.id AND b.blocked_id = ?2)
          ORDER BY login LIMIT 20"
     ).map_err(|e| AppError::internal(e.to_string()))?;
 
@@ -154,6 +165,8 @@ pub fn active_chats(conn: &Connection, user_id: i64) -> AppResult<Vec<ChatListIt
          FROM peers
          JOIN users u ON u.id = peers.peer_id
          WHERE u.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.blocker_id = ?1 AND b.blocked_id = u.id)
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.blocker_id = u.id AND b.blocked_id = ?1)
          ORDER BY peers.last_message_id DESC"
     ).map_err(|e| AppError::internal(e.to_string()))?;
 
@@ -187,6 +200,10 @@ pub fn save_message(conn: &Connection, sender_id: i64, receiver_id: i64, text: &
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Получатель не найден"));
     }
 
+    if is_blocked_either_way(conn, sender_id, receiver_id)? {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Переписка заблокирована"));
+    }
+
     conn.execute(
         "INSERT INTO messages (sender_id, receiver_id, text) VALUES (?1, ?2, ?3)",
         params![sender_id, receiver_id, text],
@@ -204,4 +221,69 @@ pub fn save_message(conn: &Connection, sender_id: i64, receiver_id: i64, text: &
             timestamp: row.get(4)?,
         })
     ).map_err(|e| AppError::internal(e.to_string()))
+}
+
+
+pub fn is_blocked_either_way(conn: &Connection, user_id: i64, target_id: i64) -> AppResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM user_blocks
+             WHERE (blocker_id = ?1 AND blocked_id = ?2)
+                OR (blocker_id = ?2 AND blocked_id = ?1)
+         )",
+        params![user_id, target_id],
+        |row| row.get(0),
+    ).map_err(|e| AppError::internal(e.to_string()))
+}
+
+pub fn block_user(conn: &Connection, user_id: i64, target_id: i64) -> AppResult<()> {
+    if user_id <= 0 || target_id <= 0 || user_id == target_id {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Неверная цель блокировки"));
+    }
+    let target_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?1 AND deleted_at IS NULL)",
+        params![target_id],
+        |row| row.get(0),
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    if !target_exists {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Пользователь не найден"));
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO user_blocks (blocker_id, blocked_id) VALUES (?1, ?2)",
+        params![user_id, target_id],
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
+}
+
+pub fn unblock_user(conn: &Connection, user_id: i64, target_id: i64) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM user_blocks WHERE blocker_id = ?1 AND blocked_id = ?2",
+        params![user_id, target_id],
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
+}
+
+pub fn delete_account(conn: &Connection, user_id: i64, password: &str) -> AppResult<()> {
+    let saved_hash: String = conn.query_row(
+        "SELECT password_hash FROM users WHERE id = ?1 AND deleted_at IS NULL",
+        params![user_id],
+        |row| row.get(0),
+    ).map_err(|_| AppError::new(StatusCode::UNAUTHORIZED, "Аккаунт не найден"))?;
+
+    match verify(password.trim(), &saved_hash) {
+        Ok(true) => {}
+        _ => return Err(AppError::new(StatusCode::UNAUTHORIZED, "Неверный пароль")),
+    }
+
+    conn.execute("DELETE FROM messages WHERE sender_id = ?1 OR receiver_id = ?1", params![user_id])
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    conn.execute("DELETE FROM direct_chat_reads WHERE user_id = ?1 OR target_id = ?1", params![user_id])
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    conn.execute("DELETE FROM user_blocks WHERE blocker_id = ?1 OR blocked_id = ?1", params![user_id])
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    conn.execute(
+        "UPDATE users SET login = 'deleted_' || id, password_hash = '', deleted_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        params![user_id],
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
 }

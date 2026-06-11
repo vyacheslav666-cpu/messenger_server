@@ -1,4 +1,13 @@
-use crate::{db, error::{AppError, AppResult}, models::{AuthRequest, AuthResponse, ChatListItem, HistoryQuery, SearchQuery, UserResponse}, state::AppState, websocket};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    models::{
+        AuthRequest, AuthResponse, BlockRequest, ChatListItem, DeleteAccountRequest,
+        HistoryQuery, SearchQuery, UserResponse,
+    },
+    state::AppState,
+    websocket,
+};
 use axum::{extract::{Query, State, ws::WebSocketUpgrade}, http::StatusCode, response::IntoResponse, Json};
 use std::{collections::HashMap, sync::Arc};
 
@@ -25,7 +34,7 @@ pub async fn search_handler(
     Query(query): Query<SearchQuery>,
 ) -> AppResult<Json<Vec<UserResponse>>> {
     let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
-    let current_user_id = 0;
+    let current_user_id = query.user_id.unwrap_or(0);
     Ok(Json(db::search_users(&db, &query.login, current_user_id)?))
 }
 
@@ -34,6 +43,9 @@ pub async fn history_handler(
     Query(query): Query<HistoryQuery>,
 ) -> AppResult<Json<Vec<crate::models::ChatMessage>>> {
     let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
+    if db::is_blocked_either_way(&db, query.user_id, query.target_id)? {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Переписка заблокирована"));
+    }
     Ok(Json(db::conversation(&db, query.user_id, query.target_id)?))
 }
 
@@ -47,6 +59,33 @@ pub async fn active_chats_handler(
 
     let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
     Ok(Json(db::active_chats(&db, user_id)?))
+}
+
+pub async fn block_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<BlockRequest>,
+) -> AppResult<StatusCode> {
+    let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
+    db::block_user(&db, payload.user_id, payload.target_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn unblock_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<BlockRequest>,
+) -> AppResult<StatusCode> {
+    let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
+    db::unblock_user(&db, payload.user_id, payload.target_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_account_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<DeleteAccountRequest>,
+) -> AppResult<StatusCode> {
+    let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
+    db::delete_account(&db, payload.user_id, &payload.password)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn ws_route_handler(

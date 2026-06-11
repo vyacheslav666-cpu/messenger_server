@@ -15,6 +15,7 @@ pub struct AuthResponse {
 #[derive(Deserialize)]
 pub struct SearchQuery {
     pub login: String,
+    pub user_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -50,4 +51,16 @@ pub struct ChatMessage {
 pub struct IncomingWsMessage {
     pub receiver_id: i64,
     pub text: String,
+}
+
+#[derive(Deserialize)]
+pub struct BlockRequest {
+    pub user_id: i64,
+    pub target_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteAccountRequest {
+    pub user_id: i64,
+    pub password: String,
 }

@@ -24,7 +24,10 @@
         <div class="sidebar">
             <div class="user-profile">
                 <span id="myUsername">Загрузка...</span>
-                <button class="logout-btn" id="logoutBtn">Выйти</button>
+                <div class="profile-actions">
+                    <button class="danger-small" id="deleteAccountBtn">Удалиться</button>
+                    <button class="logout-btn" id="logoutBtn">Выйти</button>
+                </div>
             </div>
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="Найти человека по логину...">
@@ -36,7 +39,10 @@
         </div>
 
         <div class="chat-area">
-            <div class="chat-header" id="activeChatHeader">Выберите чат для начала общения</div>
+            <div class="chat-header">
+                <span id="activeChatHeader">Выберите чат для начала общения</span>
+                <button class="danger-small chat-action" id="blockBtn" disabled>Блок</button>
+            </div>
             <div class="messages-display" id="messagesDisplayBlock"></div>
             <div class="chat-input-area">
                 <input type="text" id="chatMessageInput" placeholder="Напишите сообщение..." disabled>
