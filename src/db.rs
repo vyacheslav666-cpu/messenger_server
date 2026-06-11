@@ -1,4 +1,4 @@
-use crate::{error::{AppError, AppResult}, models::{ChatMessage, UserResponse}};
+use crate::{error::{AppError, AppResult}, models::{ChatListItem, ChatMessage, UserResponse}};
 use axum::http::StatusCode;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rusqlite::{params, Connection};
@@ -10,7 +10,8 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
              id INTEGER PRIMARY KEY AUTOINCREMENT,
              login TEXT NOT NULL UNIQUE,
              password_hash TEXT NOT NULL,
-             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             deleted_at DATETIME DEFAULT NULL
          );
          CREATE TABLE IF NOT EXISTS messages (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +22,17 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
              FOREIGN KEY(sender_id) REFERENCES users(id),
              FOREIGN KEY(receiver_id) REFERENCES users(id)
          );
-         CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, id);"
+         CREATE TABLE IF NOT EXISTS direct_chat_reads (
+             user_id INTEGER NOT NULL,
+             target_id INTEGER NOT NULL,
+             last_read_message_id INTEGER NOT NULL DEFAULT 0,
+             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             PRIMARY KEY (user_id, target_id),
+             FOREIGN KEY(user_id) REFERENCES users(id),
+             FOREIGN KEY(target_id) REFERENCES users(id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, id);
+         CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id, id);"
     )
 }
 
@@ -31,6 +42,9 @@ pub fn create_user(conn: &Connection, login: &str, password: &str) -> AppResult<
 
     if login.len() < 3 {
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Логин минимум 3 символа"));
+    }
+    if login.len() > 32 || !login.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Логин: 3-32 символа, латиница/цифры/_/-"));
     }
     if password.len() < 4 {
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Пароль минимум 4 символа"));
@@ -50,7 +64,7 @@ pub fn create_user(conn: &Connection, login: &str, password: &str) -> AppResult<
 
 pub fn verify_user(conn: &Connection, login: &str, password: &str) -> AppResult<(i64, String)> {
     let login = login.trim();
-    let mut stmt = conn.prepare("SELECT id, login, password_hash FROM users WHERE login = ?1")
+    let mut stmt = conn.prepare("SELECT id, login, password_hash FROM users WHERE login = ?1 AND deleted_at IS NULL")
         .map_err(|e| AppError::internal(e.to_string()))?;
 
     let row = stmt.query_row(params![login], |row| {
@@ -66,12 +80,15 @@ pub fn verify_user(conn: &Connection, login: &str, password: &str) -> AppResult<
     }
 }
 
-pub fn search_users(conn: &Connection, login: &str) -> AppResult<Vec<UserResponse>> {
+pub fn search_users(conn: &Connection, login: &str, current_user_id: i64) -> AppResult<Vec<UserResponse>> {
     let pattern = format!("%{}%", login.trim());
-    let mut stmt = conn.prepare("SELECT id, login FROM users WHERE login LIKE ?1 ORDER BY login LIMIT 20")
-        .map_err(|e| AppError::internal(e.to_string()))?;
+    let mut stmt = conn.prepare(
+        "SELECT id, login FROM users
+         WHERE login LIKE ?1 AND id != ?2 AND deleted_at IS NULL
+         ORDER BY login LIMIT 20"
+    ).map_err(|e| AppError::internal(e.to_string()))?;
 
-    let rows = stmt.query_map(params![pattern], |row| {
+    let rows = stmt.query_map(params![pattern, current_user_id], |row| {
         Ok(UserResponse { user_id: row.get(0)?, login: row.get(1)? })
     }).map_err(|e| AppError::internal(e.to_string()))?;
 
@@ -80,34 +97,73 @@ pub fn search_users(conn: &Connection, login: &str) -> AppResult<Vec<UserRespons
 
 pub fn conversation(conn: &Connection, user_id: i64, target_id: i64) -> AppResult<Vec<ChatMessage>> {
     let mut stmt = conn.prepare(
-        "SELECT sender_id, receiver_id, text, timestamp FROM messages
+        "SELECT id, sender_id, receiver_id, text, timestamp FROM messages
          WHERE (sender_id = ?1 AND receiver_id = ?2) OR (sender_id = ?2 AND receiver_id = ?1)
          ORDER BY id ASC"
     ).map_err(|e| AppError::internal(e.to_string()))?;
 
     let rows = stmt.query_map(params![user_id, target_id], |row| {
         Ok(ChatMessage {
-            sender_id: row.get(0)?,
-            receiver_id: row.get(1)?,
-            text: row.get(2)?,
-            timestamp: row.get(3)?,
+            id: row.get(0)?,
+            sender_id: row.get(1)?,
+            receiver_id: row.get(2)?,
+            text: row.get(3)?,
+            timestamp: row.get(4)?,
         })
     }).map_err(|e| AppError::internal(e.to_string()))?;
 
-    Ok(rows.filter_map(Result::ok).collect())
+    let messages: Vec<ChatMessage> = rows.filter_map(Result::ok).collect();
+    if let Some(last) = messages.last() {
+        mark_direct_chat_read(conn, user_id, target_id, last.id)?;
+    }
+    Ok(messages)
 }
 
-pub fn active_chats(conn: &Connection, user_id: i64) -> AppResult<Vec<UserResponse>> {
+pub fn mark_direct_chat_read(conn: &Connection, user_id: i64, target_id: i64, last_read_message_id: i64) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO direct_chat_reads (user_id, target_id, last_read_message_id, updated_at)
+         VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+         ON CONFLICT(user_id, target_id) DO UPDATE SET
+             last_read_message_id = MAX(last_read_message_id, excluded.last_read_message_id),
+             updated_at = CURRENT_TIMESTAMP",
+        params![user_id, target_id, last_read_message_id],
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
+}
+
+pub fn active_chats(conn: &Connection, user_id: i64) -> AppResult<Vec<ChatListItem>> {
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT u.id, u.login
-         FROM users u
-         JOIN messages m ON m.sender_id = u.id OR m.receiver_id = u.id
-         WHERE (m.sender_id = ?1 OR m.receiver_id = ?1) AND u.id != ?1
-         ORDER BY u.login"
+        "WITH peers AS (
+             SELECT CASE WHEN sender_id = ?1 THEN receiver_id ELSE sender_id END AS peer_id,
+                    MAX(id) AS last_message_id,
+                    MAX(timestamp) AS last_message_at
+             FROM messages
+             WHERE sender_id = ?1 OR receiver_id = ?1
+             GROUP BY peer_id
+         )
+         SELECT u.id,
+                u.login,
+                COALESCE((
+                    SELECT COUNT(*) FROM messages m
+                    LEFT JOIN direct_chat_reads r ON r.user_id = ?1 AND r.target_id = u.id
+                    WHERE m.sender_id = u.id
+                      AND m.receiver_id = ?1
+                      AND m.id > COALESCE(r.last_read_message_id, 0)
+                ), 0) AS unread_count,
+                peers.last_message_at
+         FROM peers
+         JOIN users u ON u.id = peers.peer_id
+         WHERE u.deleted_at IS NULL
+         ORDER BY peers.last_message_id DESC"
     ).map_err(|e| AppError::internal(e.to_string()))?;
 
     let rows = stmt.query_map(params![user_id], |row| {
-        Ok(UserResponse { user_id: row.get(0)?, login: row.get(1)? })
+        Ok(ChatListItem {
+            user_id: row.get(0)?,
+            login: row.get(1)?,
+            unread_count: row.get(2)?,
+            last_message_at: row.get(3)?,
+        })
     }).map_err(|e| AppError::internal(e.to_string()))?;
 
     Ok(rows.filter_map(Result::ok).collect())
@@ -122,6 +178,15 @@ pub fn save_message(conn: &Connection, sender_id: i64, receiver_id: i64, text: &
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Сообщение слишком длинное"));
     }
 
+    let receiver_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?1 AND deleted_at IS NULL)",
+        params![receiver_id],
+        |row| row.get(0),
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    if !receiver_exists {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Получатель не найден"));
+    }
+
     conn.execute(
         "INSERT INTO messages (sender_id, receiver_id, text) VALUES (?1, ?2, ?3)",
         params![sender_id, receiver_id, text],
@@ -129,13 +194,14 @@ pub fn save_message(conn: &Connection, sender_id: i64, receiver_id: i64, text: &
 
     let id = conn.last_insert_rowid();
     conn.query_row(
-        "SELECT sender_id, receiver_id, text, timestamp FROM messages WHERE id = ?1",
+        "SELECT id, sender_id, receiver_id, text, timestamp FROM messages WHERE id = ?1",
         params![id],
         |row| Ok(ChatMessage {
-            sender_id: row.get(0)?,
-            receiver_id: row.get(1)?,
-            text: row.get(2)?,
-            timestamp: row.get(3)?,
+            id: row.get(0)?,
+            sender_id: row.get(1)?,
+            receiver_id: row.get(2)?,
+            text: row.get(3)?,
+            timestamp: row.get(4)?,
         })
     ).map_err(|e| AppError::internal(e.to_string()))
 }

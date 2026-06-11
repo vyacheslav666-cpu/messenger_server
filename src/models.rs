@@ -29,8 +29,17 @@ pub struct HistoryQuery {
     pub target_id: i64,
 }
 
+#[derive(Serialize)]
+pub struct ChatListItem {
+    pub user_id: i64,
+    pub login: String,
+    pub unread_count: i64,
+    pub last_message_at: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
+    pub id: i64,
     pub sender_id: i64,
     pub receiver_id: i64,
     pub text: String,

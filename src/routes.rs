@@ -1,4 +1,4 @@
-use crate::{db, error::{AppError, AppResult}, models::{AuthRequest, AuthResponse, HistoryQuery, SearchQuery, UserResponse}, state::AppState, websocket};
+use crate::{db, error::{AppError, AppResult}, models::{AuthRequest, AuthResponse, ChatListItem, HistoryQuery, SearchQuery, UserResponse}, state::AppState, websocket};
 use axum::{extract::{Query, State, ws::WebSocketUpgrade}, http::StatusCode, response::IntoResponse, Json};
 use std::{collections::HashMap, sync::Arc};
 
@@ -25,7 +25,8 @@ pub async fn search_handler(
     Query(query): Query<SearchQuery>,
 ) -> AppResult<Json<Vec<UserResponse>>> {
     let db = state.db.lock().map_err(|_| AppError::internal("DB lock poisoned"))?;
-    Ok(Json(db::search_users(&db, &query.login)?))
+    let current_user_id = 0;
+    Ok(Json(db::search_users(&db, &query.login, current_user_id)?))
 }
 
 pub async fn history_handler(
@@ -39,7 +40,7 @@ pub async fn history_handler(
 pub async fn active_chats_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
-) -> AppResult<Json<Vec<UserResponse>>> {
+) -> AppResult<Json<Vec<ChatListItem>>> {
     let user_id = params.get("user_id")
         .and_then(|id| id.parse::<i64>().ok())
         .ok_or_else(|| AppError::new(StatusCode::BAD_REQUEST, "Нужен user_id"))?;

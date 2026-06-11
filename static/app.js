@@ -52,12 +52,16 @@ function initWebSocket() {
         const myIdNum = Number(sessionStorage.getItem('userId'));
         const otherUserId = msg.sender_id === myIdNum ? msg.receiver_id : msg.sender_id;
 
-        ensureContact(otherUserId, otherUserId === currentActiveChatUserId ? currentActiveChatLogin : `user-${otherUserId}`);
-
         if (otherUserId === currentActiveChatUserId) {
             appendMessage(msg, msg.sender_id === myIdNum ? 'my-msg' : 'their-msg');
+            // Счётчик непрочитанных — только локальный для текущего пользователя.
+            // Никому не показываем «прочитано», это не read receipt.
+            fetch(`${API_URL}/messages?user_id=${encodeURIComponent(myIdNum)}&target_id=${encodeURIComponent(otherUserId)}`)
+                .then(() => loadActiveChats())
+                .catch(() => {});
         } else {
             loadActiveChats();
+            notifyNewMessage();
         }
     };
 
@@ -165,12 +169,24 @@ function addContactElement(u) {
     if (Number(u.user_id) === Number(sessionStorage.getItem('userId'))) return;
     const listBlock = el('contactsListBlock');
     const existing = document.getElementById(`contact-${u.user_id}`);
-    if (existing) return;
+    if (existing) existing.remove();
 
     const item = document.createElement('div');
     item.className = 'contact-item';
     item.id = `contact-${u.user_id}`;
-    item.textContent = `👤 ${u.login}`;
+
+    const name = document.createElement('span');
+    name.textContent = u.login;
+
+    item.appendChild(name);
+
+    if (u.unread_count && Number(u.unread_count) > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'unread-badge';
+        badge.textContent = Number(u.unread_count) > 99 ? '99+' : String(u.unread_count);
+        item.appendChild(badge);
+    }
+
     item.addEventListener('click', () => openChat(u.user_id, u.login));
     listBlock.appendChild(item);
 }
@@ -219,6 +235,7 @@ async function openChat(targetUserId, login) {
         const messages = await response.json();
         display.innerHTML = '';
         messages.forEach(msg => appendMessage(msg, msg.sender_id == myId ? 'my-msg' : 'their-msg'));
+        loadActiveChats();
     } catch(e) {
         console.error('Не удалось подгрузить историю:', e);
     }
@@ -260,3 +277,13 @@ function formatTime(raw) {
     if (raw.includes('-') && raw.includes(' ')) return raw.split(' ')[1].slice(0, 5);
     return raw;
 }
+
+function notifyNewMessage() {
+    if (document.hidden) {
+        document.title = 'Новое сообщение — Наш Мессенджер';
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) document.title = 'Наш Мессенджер';
+});
