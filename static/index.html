@@ -9,46 +9,67 @@
 <body>
     <div class="auth-container" id="authBox">
         <h3 id="formTitle">Войти в Мессенджер</h3>
-        <input type="text" id="loginInput" placeholder="Введите логин" autocomplete="username">
-        <input type="password" id="passInput" placeholder="Введите пароль" autocomplete="current-password">
+        <input type="text" id="loginInput" placeholder="Логин" autocomplete="username">
+        <input type="password" id="passInput" placeholder="Пароль" autocomplete="current-password">
         <input type="password" id="passConfirmInput" placeholder="Повторите пароль" style="display: none;" autocomplete="new-password">
         <button id="actionBtn">Войти</button>
         <div class="error-msg" id="errorBlock"></div>
         <div class="success-msg" id="successBlock"></div>
-        <div class="toggle-link" id="toggleBlock">
-            Нет аккаунта? <span id="registerLink">Зарегистрироваться</span>
-        </div>
+        <div class="toggle-link" id="toggleBlock">Нет аккаунта? <span id="registerLink">Зарегистрироваться</span></div>
     </div>
 
     <div class="messenger-container" id="messengerBox">
-        <div class="sidebar">
+        <aside class="sidebar">
             <div class="user-profile">
-                <span id="myUsername">Загрузка...</span>
+                <div class="user-name" id="myUsername">Загрузка...</div>
                 <div class="profile-actions">
-                    <button class="danger-small" id="deleteAccountBtn">Удалиться</button>
-                    <button class="logout-btn" id="logoutBtn">Выйти</button>
+                    <button class="icon-btn danger" id="deleteAccountBtn" title="Удалить аккаунт">Удалиться</button>
+                    <button class="icon-btn" id="logoutBtn" title="Выйти">Выйти</button>
                 </div>
             </div>
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Найти человека по логину...">
-                <button id="searchBtn">Найти</button>
-            </div>
-            <div class="contacts-list" id="contactsListBlock">
-                <div class="empty">Список контактов пуст</div>
-            </div>
-        </div>
 
-        <div class="chat-area">
-            <div class="chat-header">
-                <span id="activeChatHeader">Выберите чат для начала общения</span>
-                <button class="danger-small chat-action" id="blockBtn" disabled>Блок</button>
+            <details class="compose-box">
+                <summary>+ Новый чат / группа</summary>
+                <div class="compose-content">
+                    <div class="search-box compact">
+                        <input type="text" id="searchInput" placeholder="Найти пользователя...">
+                        <button id="searchBtn">Найти</button>
+                    </div>
+                    <div class="group-box">
+                        <input type="text" id="groupTitleInput" placeholder="Название группы">
+                        <input type="text" id="groupMembersInput" placeholder="Логины через запятую">
+                        <button id="createGroupBtn">Создать группу</button>
+                    </div>
+                </div>
+            </details>
+
+            <div class="chats-title">Чаты</div>
+            <div class="contacts-list" id="contactsListBlock"><div class="empty">Список чатов пуст</div></div>
+        </aside>
+
+        <main class="chat-area">
+            <header class="chat-header">
+                <span id="activeChatHeader">Выберите чат</span>
+                <div class="chat-actions">
+                    <button class="secondary-small" id="globalSearchBtn">Поиск везде</button>
+                    <button class="danger-small chat-action" id="blockBtn" disabled>Блок</button>
+                </div>
+            </header>
+
+            <div class="chat-search-panel" id="chatSearchPanel">
+                <input type="text" id="historySearchInput" placeholder="Поиск в текущем чате..." disabled>
+                <button id="historySearchBtn" disabled>Искать</button>
+                <label class="preview-toggle"><input type="checkbox" id="linkPreviewToggle"> предпросмотр ссылок</label>
             </div>
+
+            <div class="search-results" id="historySearchResults" style="display:none;"></div>
             <div class="messages-display" id="messagesDisplayBlock"></div>
+
             <div class="chat-input-area">
                 <input type="text" id="chatMessageInput" placeholder="Напишите сообщение..." disabled>
                 <button id="chatSendBtn" disabled>Отправить</button>
             </div>
-        </div>
+        </main>
     </div>
 
     <script src="/app.js"></script>

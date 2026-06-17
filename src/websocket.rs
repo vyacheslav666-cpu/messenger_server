@@ -5,9 +5,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
-    if user_id <= 0 {
-        return;
-    }
+    if user_id <= 0 { return; }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -21,9 +19,7 @@ pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id
 
     let mut send_task = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
-            if ws_sender.send(Message::Text(text.into())).await.is_err() {
-                break;
-            }
+            if ws_sender.send(Message::Text(text.into())).await.is_err() { break; }
         }
     });
 
@@ -37,37 +33,37 @@ pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id
                 Err(_) => continue,
             };
 
-            let saved = {
-                let db = match state_for_recv.db.lock() {
-                    Ok(db) => db,
-                    Err(_) => break,
-                };
-                db::save_message(&db, user_id, incoming.receiver_id, &incoming.text)
-            };
-
-            let saved = match saved {
-                Ok(v) => v,
-                Err(err) => {
-                    tracing::warn!(?err, "message not saved");
+            let saved_and_targets = {
+                let db = match state_for_recv.db.lock() { Ok(db) => db, Err(_) => break };
+                if let Some(chat_id) = incoming.chat_id {
+                    match db::save_group_message(&db, user_id, chat_id, &incoming.text) {
+                        Ok(saved) => {
+                            let targets = db::group_member_ids(&db, chat_id).unwrap_or_default();
+                            Ok((saved, targets))
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else if let Some(receiver_id) = incoming.receiver_id {
+                    match db::save_direct_message(&db, user_id, receiver_id, &incoming.text) {
+                        Ok(saved) => Ok((saved, vec![user_id, receiver_id])),
+                        Err(err) => Err(err),
+                    }
+                } else {
                     continue;
                 }
             };
 
-            let payload = match serde_json::to_string(&saved) {
+            let (saved, targets) = match saved_and_targets {
                 Ok(v) => v,
-                Err(_) => continue,
+                Err(err) => { tracing::warn!(?err, "message not saved"); continue; }
             };
 
-            let conns_guard = match conns.lock() {
-                Ok(v) => v,
-                Err(_) => break,
-            };
-
-            if let Some(receiver_tx) = conns_guard.get(&saved.receiver_id) {
-                let _ = receiver_tx.send(payload.clone());
-            }
-            if let Some(sender_tx) = conns_guard.get(&saved.sender_id) {
-                let _ = sender_tx.send(payload);
+            let payload = match serde_json::to_string(&saved) { Ok(v) => v, Err(_) => continue };
+            let conns_guard = match conns.lock() { Ok(v) => v, Err(_) => break };
+            for target_id in targets {
+                if let Some(tx) = conns_guard.get(&target_id) {
+                    let _ = tx.send(payload.clone());
+                }
             }
         }
     });

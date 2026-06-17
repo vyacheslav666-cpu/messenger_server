@@ -8,7 +8,7 @@ mod websocket;
 
 use axum::{routing::{get, post}, Router};
 use config::Config;
-use routes::{active_chats_handler, block_handler, delete_account_handler, history_handler, login_handler, register_handler, search_handler, unblock_handler, ws_route_handler};
+use routes::{active_chats_handler, block_handler, create_group_handler, delete_account_handler, history_handler, message_search_handler, login_handler, register_handler, search_handler, unblock_handler, ws_route_handler};
 use state::AppState;
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::{cors::{Any, CorsLayer}, services::{ServeDir, ServeFile}, trace::TraceLayer};
@@ -40,7 +40,9 @@ async fn main() {
         .route("/api/login", post(login_handler))
         .route("/api/search", get(search_handler))
         .route("/api/messages", get(history_handler))
+        .route("/api/messages/search", get(message_search_handler))
         .route("/api/chats", get(active_chats_handler))
+        .route("/api/groups", post(create_group_handler))
         .route("/api/block", post(block_handler))
         .route("/api/unblock", post(unblock_handler))
         .route("/api/account/delete", post(delete_account_handler))
