@@ -4,15 +4,19 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+const OUTBOUND_QUEUE_SIZE: usize = 100;
+const MAX_WS_TEXT_BYTES: usize = 8 * 1024;
+
 pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
     if user_id <= 0 { return; }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = mpsc::channel::<String>(OUTBOUND_QUEUE_SIZE);
+    let tx_for_cleanup = tx.clone();
 
     {
         let mut conns = state.conns.lock().expect("connections lock poisoned");
-        conns.insert(user_id, tx);
+        conns.entry(user_id).or_default().push(tx);
     }
 
     tracing::info!(user_id, "websocket connected");
@@ -28,6 +32,11 @@ pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id
 
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(Message::Text(text))) = ws_receiver.next().await {
+            if text.len() > MAX_WS_TEXT_BYTES {
+                tracing::warn!(user_id, "oversized websocket message ignored");
+                continue;
+            }
+
             let incoming = match serde_json::from_str::<IncomingWsMessage>(&text) {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -59,10 +68,10 @@ pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id
             };
 
             let payload = match serde_json::to_string(&saved) { Ok(v) => v, Err(_) => continue };
-            let conns_guard = match conns.lock() { Ok(v) => v, Err(_) => break };
+            let mut conns_guard = match conns.lock() { Ok(v) => v, Err(_) => break };
             for target_id in targets {
-                if let Some(tx) = conns_guard.get(&target_id) {
-                    let _ = tx.send(payload.clone());
+                if let Some(senders) = conns_guard.get_mut(&target_id) {
+                    senders.retain(|target_tx| target_tx.try_send(payload.clone()).is_ok());
                 }
             }
         }
@@ -74,6 +83,11 @@ pub async fn handle_user_socket(socket: WebSocket, state: Arc<AppState>, user_id
     }
 
     let mut conns = state.conns.lock().expect("connections lock poisoned");
-    conns.remove(&user_id);
+    if let Some(senders) = conns.get_mut(&user_id) {
+        senders.retain(|tx| !tx.same_channel(&tx_for_cleanup));
+        if senders.is_empty() {
+            conns.remove(&user_id);
+        }
+    }
     tracing::info!(user_id, "websocket disconnected");
 }
