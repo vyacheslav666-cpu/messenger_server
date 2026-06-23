@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::{collections::HashMap, fs, sync::{Arc, Mutex}};
 use tokio::sync::mpsc;
 
-pub type ActiveConnections = Arc<Mutex<HashMap<i64, mpsc::UnboundedSender<String>>>>;
+pub type ActiveConnections = Arc<Mutex<HashMap<i64, Vec<mpsc::Sender<String>>>>>;
 
 pub struct AppState {
     pub db: Mutex<Connection>,
