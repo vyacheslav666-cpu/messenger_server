@@ -1,17 +1,29 @@
 use crate::{error::{AppError, AppResult}, models::{ChatListItem, ChatMessage, CreateGroupResponse, MessageSearchResult, UserResponse}};
 use axum::http::StatusCode;
 use bcrypt::{hash, verify, DEFAULT_COST};
+use rand::{distributions::Alphanumeric, Rng};
 use rusqlite::{params, Connection, OptionalExtension};
+use sha2::{Digest, Sha256};
+
+const SESSION_DAYS: i64 = 30;
 
 pub fn init(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
+         PRAGMA journal_mode = WAL;
          CREATE TABLE IF NOT EXISTS users (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
              login TEXT NOT NULL UNIQUE,
              password_hash TEXT NOT NULL,
              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
              deleted_at DATETIME DEFAULT NULL
+         );
+         CREATE TABLE IF NOT EXISTS sessions (
+             token_hash TEXT PRIMARY KEY,
+             user_id INTEGER NOT NULL,
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             expires_at DATETIME NOT NULL,
+             FOREIGN KEY(user_id) REFERENCES users(id)
          );
          CREATE TABLE IF NOT EXISTS messages (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,20 +33,25 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
              text TEXT NOT NULL,
              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
              FOREIGN KEY(sender_id) REFERENCES users(id),
-             FOREIGN KEY(receiver_id) REFERENCES users(id)
+             FOREIGN KEY(receiver_id) REFERENCES users(id),
+             FOREIGN KEY(chat_id) REFERENCES chats(id)
          );
          CREATE TABLE IF NOT EXISTS direct_chat_reads (
              user_id INTEGER NOT NULL,
              target_id INTEGER NOT NULL,
              last_read_message_id INTEGER NOT NULL DEFAULT 0,
              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-             PRIMARY KEY (user_id, target_id)
+             PRIMARY KEY (user_id, target_id),
+             FOREIGN KEY(user_id) REFERENCES users(id),
+             FOREIGN KEY(target_id) REFERENCES users(id)
          );
          CREATE TABLE IF NOT EXISTS user_blocks (
              blocker_id INTEGER NOT NULL,
              blocked_id INTEGER NOT NULL,
              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-             PRIMARY KEY (blocker_id, blocked_id)
+             PRIMARY KEY (blocker_id, blocked_id),
+             FOREIGN KEY(blocker_id) REFERENCES users(id),
+             FOREIGN KEY(blocked_id) REFERENCES users(id)
          );
          CREATE TABLE IF NOT EXISTS chats (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,22 +59,29 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
              title TEXT NOT NULL,
              created_by INTEGER NOT NULL,
              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-             deleted_at DATETIME DEFAULT NULL
+             deleted_at DATETIME DEFAULT NULL,
+             FOREIGN KEY(created_by) REFERENCES users(id)
          );
          CREATE TABLE IF NOT EXISTS chat_members (
              chat_id INTEGER NOT NULL,
              user_id INTEGER NOT NULL,
              joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
              left_at DATETIME DEFAULT NULL,
-             PRIMARY KEY (chat_id, user_id)
+             PRIMARY KEY (chat_id, user_id),
+             FOREIGN KEY(chat_id) REFERENCES chats(id),
+             FOREIGN KEY(user_id) REFERENCES users(id)
          );
          CREATE TABLE IF NOT EXISTS group_chat_reads (
              user_id INTEGER NOT NULL,
              chat_id INTEGER NOT NULL,
              last_read_message_id INTEGER NOT NULL DEFAULT 0,
              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-             PRIMARY KEY (user_id, chat_id)
+             PRIMARY KEY (user_id, chat_id),
+             FOREIGN KEY(user_id) REFERENCES users(id),
+             FOREIGN KEY(chat_id) REFERENCES chats(id)
          );
+         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
          CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, id);
          CREATE INDEX IF NOT EXISTS idx_messages_group ON messages(chat_id, id);
          CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id, id);
@@ -65,7 +89,6 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id, chat_id);"
     )?;
 
-    // Миграция старой БД v0.3: если messages уже была без chat_id/receiver_id nullable.
     let _ = conn.execute("ALTER TABLE messages ADD COLUMN chat_id INTEGER", []);
     Ok(())
 }
@@ -77,7 +100,7 @@ pub fn create_user(conn: &Connection, login: &str, password: &str) -> AppResult<
     if login.len() > 32 || !login.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Логин: 3-32 символа, латиница/цифры/_/-"));
     }
-    if password.len() < 4 { return Err(AppError::new(StatusCode::BAD_REQUEST, "Пароль минимум 4 символа")); }
+    if password.len() < 8 { return Err(AppError::new(StatusCode::BAD_REQUEST, "Пароль минимум 8 символов")); }
     let hashed = hash(password, DEFAULT_COST).map_err(|_| AppError::internal("Ошибка хэширования пароля"))?;
     match conn.execute("INSERT INTO users (login, password_hash) VALUES (?1, ?2)", params![login, hashed]) {
         Ok(_) => Ok(()),
@@ -97,6 +120,55 @@ pub fn verify_user(conn: &Connection, login: &str, password: &str) -> AppResult<
         },
         Err(_) => Err(AppError::new(StatusCode::UNAUTHORIZED, "Неверные данные")),
     }
+}
+
+pub fn create_session(conn: &Connection, user_id: i64) -> AppResult<String> {
+    cleanup_expired_sessions(conn)?;
+    let token: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(64)
+        .map(char::from)
+        .collect();
+    let token_hash = hash_token(&token);
+    conn.execute(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?1, ?2, DATETIME('now', ?3))",
+        params![token_hash, user_id, format!("+{} days", SESSION_DAYS)],
+    ).map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(token)
+}
+
+pub fn authenticate_token(conn: &Connection, token: &str) -> AppResult<i64> {
+    if token.len() < 32 || token.len() > 256 {
+        return Err(AppError::new(StatusCode::UNAUTHORIZED, "Нужна авторизация"));
+    }
+
+    let token_hash = hash_token(token);
+    let user_id: Option<i64> = conn.query_row(
+        "SELECT s.user_id
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = ?1 AND s.expires_at > CURRENT_TIMESTAMP AND u.deleted_at IS NULL",
+        params![token_hash], |row| row.get(0),
+    ).optional().map_err(|e| AppError::internal(e.to_string()))?;
+
+    user_id.ok_or_else(|| AppError::new(StatusCode::UNAUTHORIZED, "Нужна авторизация"))
+}
+
+pub fn delete_user_sessions(conn: &Connection, user_id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![user_id])
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
+}
+
+fn cleanup_expired_sessions(conn: &Connection) -> AppResult<()> {
+    conn.execute("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP", [])
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(())
+}
+
+fn hash_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 pub fn search_users(conn: &Connection, login: &str, current_user_id: i64) -> AppResult<Vec<UserResponse>> {
@@ -300,6 +372,7 @@ pub fn delete_account(conn: &Connection, user_id: i64, password: &str) -> AppRes
         "SELECT password_hash FROM users WHERE id = ?1 AND deleted_at IS NULL", params![user_id], |row| row.get(0),
     ).map_err(|_| AppError::new(StatusCode::UNAUTHORIZED, "Аккаунт не найден"))?;
     match verify(password.trim(), &saved_hash) { Ok(true) => {}, _ => return Err(AppError::new(StatusCode::UNAUTHORIZED, "Неверный пароль")), }
+    delete_user_sessions(conn, user_id)?;
     conn.execute("DELETE FROM messages WHERE sender_id = ?1 OR receiver_id = ?1", params![user_id]).map_err(|e| AppError::internal(e.to_string()))?;
     conn.execute("DELETE FROM direct_chat_reads WHERE user_id = ?1 OR target_id = ?1", params![user_id]).map_err(|e| AppError::internal(e.to_string()))?;
     conn.execute("DELETE FROM group_chat_reads WHERE user_id = ?1", params![user_id]).map_err(|e| AppError::internal(e.to_string()))?;
@@ -347,7 +420,6 @@ pub fn group_member_ids(conn: &Connection, chat_id: i64) -> AppResult<Vec<i64>> 
     let rows = stmt.query_map(params![chat_id], |row| row.get(0)).map_err(|e| AppError::internal(e.to_string()))?;
     Ok(rows.filter_map(Result::ok).collect())
 }
-
 
 pub fn search_messages(conn: &Connection, user_id: i64, q: &str, target_id: Option<i64>, chat_id: Option<i64>) -> AppResult<Vec<MessageSearchResult>> {
     let query = q.trim();
