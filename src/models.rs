@@ -10,12 +10,12 @@ pub struct AuthRequest {
 pub struct AuthResponse {
     pub user_id: i64,
     pub login: String,
+    pub token: String,
 }
 
 #[derive(Deserialize)]
 pub struct SearchQuery {
     pub login: String,
-    pub user_id: Option<i64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -26,7 +26,6 @@ pub struct UserResponse {
 
 #[derive(Deserialize)]
 pub struct HistoryQuery {
-    pub user_id: i64,
     pub target_id: Option<i64>,
     pub chat_id: Option<i64>,
 }
@@ -61,19 +60,16 @@ pub struct IncomingWsMessage {
 
 #[derive(Deserialize)]
 pub struct BlockRequest {
-    pub user_id: i64,
     pub target_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct DeleteAccountRequest {
-    pub user_id: i64,
     pub password: String,
 }
 
 #[derive(Deserialize)]
 pub struct CreateGroupRequest {
-    pub user_id: i64,
     pub title: String,
     pub member_logins: Vec<String>,
 }
@@ -86,7 +82,6 @@ pub struct CreateGroupResponse {
 
 #[derive(Deserialize)]
 pub struct MessageSearchQuery {
-    pub user_id: i64,
     pub q: String,
     pub target_id: Option<i64>,
     pub chat_id: Option<i64>,
