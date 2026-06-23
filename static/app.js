@@ -10,7 +10,7 @@ const el = (id) => document.getElementById(id);
 
 window.addEventListener('load', () => {
     bindEvents();
-    if (sessionStorage.getItem('userId')) showMessengerUI();
+    if (sessionStorage.getItem('authToken')) showMessengerUI();
 });
 
 function bindEvents() {
@@ -33,6 +33,20 @@ function bindEvents() {
     el('historySearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') searchHistory(false); });
 }
 
+function authHeaders() {
+    const token = sessionStorage.getItem('authToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function apiFetch(path, options = {}) {
+    const response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers: { ...authHeaders(), ...(options.headers || {}) },
+    });
+    if (response.status === 401) logout();
+    return response;
+}
+
 function showMessengerUI() {
     el('authBox').style.display = 'none';
     el('messengerBox').style.display = 'flex';
@@ -43,10 +57,10 @@ function showMessengerUI() {
 }
 
 function initWebSocket() {
-    const myId = sessionStorage.getItem('userId');
-    if (!myId) return;
+    const token = sessionStorage.getItem('authToken');
+    if (!token) return;
     if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) return;
-    ws = new WebSocket(`${WS_URL}?user_id=${encodeURIComponent(myId)}`);
+    ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
 
     ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
@@ -71,6 +85,7 @@ function initWebSocket() {
 
 function logout() {
     sessionStorage.clear();
+    clearTimeout(reconnectTimer);
     if (ws) ws.close();
     location.reload();
 }
@@ -108,6 +123,7 @@ async function submitAuth() {
             setTimeout(() => switchMode(false), 900);
         } else {
             const userData = await response.json();
+            sessionStorage.setItem('authToken', userData.token);
             sessionStorage.setItem('userId', userData.user_id);
             sessionStorage.setItem('userLogin', userData.login);
             showMessengerUI();
@@ -120,9 +136,8 @@ function showError(text) { el('errorBlock').innerText = text; el('errorBlock').s
 function showSuccess(text) { el('successBlock').innerText = text; el('successBlock').style.display = 'block'; el('errorBlock').style.display = 'none'; }
 
 async function loadActiveChats() {
-    const myId = sessionStorage.getItem('userId');
     try {
-        const response = await fetch(`${API_URL}/chats?user_id=${encodeURIComponent(myId)}`);
+        const response = await apiFetch('/chats');
         if (!response.ok) return;
         renderChatList(await response.json());
     } catch (e) { console.error('Не удалось загрузить список чатов:', e); }
@@ -168,8 +183,7 @@ async function searchContact() {
     const query = el('searchInput').value.trim();
     if (!query) return loadActiveChats();
     try {
-        const myId = sessionStorage.getItem('userId');
-        const response = await fetch(`${API_URL}/search?login=${encodeURIComponent(query)}&user_id=${encodeURIComponent(myId)}`);
+        const response = await apiFetch(`/search?login=${encodeURIComponent(query)}`);
         if (!response.ok) return;
         const users = await response.json();
         renderSearchResults(users);
@@ -187,10 +201,9 @@ async function createGroup() {
     const title = el('groupTitleInput').value.trim();
     const memberLogins = el('groupMembersInput').value.split(',').map(x => x.trim()).filter(Boolean);
     if (!title) return showError('Введи название группы');
-    const myId = Number(sessionStorage.getItem('userId'));
-    const response = await fetch(`${API_URL}/groups`, {
+    const response = await apiFetch('/groups', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: myId, title, member_logins: memberLogins })
+        body: JSON.stringify({ title, member_logins: memberLogins })
     });
     if (!response.ok) return showError(await response.text());
     const group = await response.json();
@@ -203,13 +216,13 @@ async function createGroup() {
 async function openDirectChat(userId, title) {
     currentChat = { type: 'direct', userId: Number(userId), title };
     openChatUi(title, true);
-    await loadHistory(`${API_URL}/messages?user_id=${encodeURIComponent(sessionStorage.getItem('userId'))}&target_id=${encodeURIComponent(userId)}`);
+    await loadHistory(`/messages?target_id=${encodeURIComponent(userId)}`);
 }
 
 async function openGroupChat(chatId, title) {
     currentChat = { type: 'group', chatId: Number(chatId), title };
     openChatUi(`# ${title}`, false);
-    await loadHistory(`${API_URL}/messages?user_id=${encodeURIComponent(sessionStorage.getItem('userId'))}&chat_id=${encodeURIComponent(chatId)}`);
+    await loadHistory(`/messages?chat_id=${encodeURIComponent(chatId)}`);
 }
 
 function openChatUi(title, canBlock) {
@@ -225,9 +238,9 @@ function openChatUi(title, canBlock) {
     el('messagesDisplayBlock').innerHTML = '<div class="empty">Загрузка истории...</div>';
 }
 
-async function loadHistory(url) {
+async function loadHistory(path) {
     try {
-        const response = await fetch(url);
+        const response = await apiFetch(path);
         if (!response.ok) return;
         const messages = await response.json();
         el('messagesDisplayBlock').innerHTML = '';
@@ -239,11 +252,10 @@ async function loadHistory(url) {
 
 function markCurrentRead() {
     if (!currentChat) return;
-    const myId = sessionStorage.getItem('userId');
-    const url = currentChat.type === 'group'
-        ? `${API_URL}/messages?user_id=${encodeURIComponent(myId)}&chat_id=${encodeURIComponent(currentChat.chatId)}`
-        : `${API_URL}/messages?user_id=${encodeURIComponent(myId)}&target_id=${encodeURIComponent(currentChat.userId)}`;
-    fetch(url).then(() => loadActiveChats()).catch(() => {});
+    const path = currentChat.type === 'group'
+        ? `/messages?chat_id=${encodeURIComponent(currentChat.chatId)}`
+        : `/messages?target_id=${encodeURIComponent(currentChat.userId)}`;
+    apiFetch(path).then(() => loadActiveChats()).catch(() => {});
 }
 
 function sendChatMessage() {
@@ -259,8 +271,7 @@ async function blockCurrentUser() {
     if (!currentChat || currentChat.type !== 'direct') return;
     const ok = confirm(`Заблокировать ${currentChat.title}? Переписка исчезнет из списка, новые сообщения не будут проходить.`);
     if (!ok) return;
-    const myId = Number(sessionStorage.getItem('userId'));
-    const response = await fetch(`${API_URL}/block`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: myId, target_id: currentChat.userId }) });
+    const response = await apiFetch('/block', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_id: currentChat.userId }) });
     if (!response.ok) return showError(await response.text());
     currentChat = null;
     el('activeChatHeader').innerText = 'Выберите чат для начала общения';
@@ -280,8 +291,7 @@ async function deleteAccount() {
     const password = prompt('Для удаления аккаунта введи пароль. Личные переписки будут удалены, из групп ты выйдешь.');
     if (!password) return;
     if (!confirm('Точно удалить аккаунт? Отменить нельзя.')) return;
-    const myId = Number(sessionStorage.getItem('userId'));
-    const response = await fetch(`${API_URL}/account/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: myId, password }) });
+    const response = await apiFetch('/account/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
     if (!response.ok) return showError(await response.text());
     sessionStorage.clear();
     if (ws) ws.close();
@@ -319,18 +329,16 @@ function appendMessage(msg, type) {
     display.scrollTop = display.scrollHeight;
 }
 
-
 async function searchHistory(globalSearch) {
     const query = el('historySearchInput').value.trim();
     if (query.length < 2) return showSearchHint('Минимум 2 символа');
-    const myId = sessionStorage.getItem('userId');
-    const params = new URLSearchParams({ user_id: myId, q: query });
+    const params = new URLSearchParams({ q: query });
     if (!globalSearch && currentChat) {
         if (currentChat.type === 'group') params.set('chat_id', currentChat.chatId);
         else params.set('target_id', currentChat.userId);
     }
     try {
-        const response = await fetch(`${API_URL}/messages/search?${params.toString()}`);
+        const response = await apiFetch(`/messages/search?${params.toString()}`);
         if (!response.ok) return showSearchHint(await response.text());
         lastSearchResults = await response.json();
         renderSearchResultsInChat(lastSearchResults, globalSearch);
@@ -388,7 +396,6 @@ function clearSearchResults() {
 function savePreviewSetting() {
     localStorage.setItem('linkPreviewEnabled', el('linkPreviewToggle').checked ? '1' : '0');
     if (currentChat) {
-        // Перерисовать проще через повторную загрузку текущей истории.
         if (currentChat.type === 'group') openGroupChat(currentChat.chatId, currentChat.title);
         else openDirectChat(currentChat.userId, currentChat.title);
     }
@@ -454,6 +461,6 @@ function formatTime(raw) {
 }
 
 function notifyNewMessage() {
-    if (document.hidden) document.title = 'Новое сообщение — Наш Мессенджер';
+    if (document.hidden) document.title = 'Новое сообщение - Наш Мессенджер';
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) document.title = 'Наш Мессенджер'; });
