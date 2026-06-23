@@ -20,6 +20,11 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if self.status == StatusCode::INTERNAL_SERVER_ERROR {
+            tracing::error!(error = %self.message, "internal server error");
+            return (self.status, "Внутренняя ошибка сервера").into_response();
+        }
+
         (self.status, self.message).into_response()
     }
 }
