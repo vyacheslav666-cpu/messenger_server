@@ -11,7 +11,7 @@ use config::Config;
 use routes::{active_chats_handler, block_handler, create_group_handler, delete_account_handler, history_handler, message_search_handler, login_handler, register_handler, search_handler, unblock_handler, ws_route_handler};
 use state::AppState;
 use std::{net::SocketAddr, sync::Arc};
-use tower_http::{cors::{Any, CorsLayer}, services::{ServeDir, ServeFile}, trace::TraceLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -19,17 +19,12 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "messenger_server=info,tower_http=info".into()))
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "messenger_server=info".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let config = Config::from_env();
     let state = Arc::new(AppState::new(&config.database_path));
-
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
 
     let static_files = ServeDir::new("static")
         .not_found_service(ServeFile::new("static/index.html"));
@@ -48,9 +43,7 @@ async fn main() {
         .route("/api/account/delete", post(delete_account_handler))
         .route("/ws", get(ws_route_handler))
         .fallback_service(static_files)
-        .with_state(state)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
+        .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("messenger started: http://{}", addr);
