@@ -1,0 +1,34 @@
+services:
+  messenger:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: emergency-messenger
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DATABASE_PATH: /app/data/chat.db
+      RUST_LOG: ${RUST_LOG:-messenger_server=info}
+    volumes:
+      - messenger_data:/app/data
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: emergency-messenger-caddy
+    restart: unless-stopped
+    depends_on:
+      - messenger
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  messenger_data:
+  caddy_data:
+  caddy_config:
